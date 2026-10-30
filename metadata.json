@@ -1,0 +1,6 @@
+{
+  "name": "AuraCare AI - COD & RTO Decision Engine",
+  "description": "AI-powered RTO prediction, automated WhatsApp confirmation simulator, threshold control panel, and financial impact analytics for D2C brands.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
