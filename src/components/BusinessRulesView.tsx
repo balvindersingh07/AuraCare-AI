@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { BusinessRulesConfig, DEFAULT_BUSINESS_RULES, Order } from '../types';
 import { computeBatchMetrics } from '../utils/engine';
 import { 
@@ -8,7 +8,7 @@ import {
   CheckCircle2, 
   AlertCircle, 
   TrendingUp, 
-  Sparkles,
+  Sparkles, 
   Info
 } from 'lucide-react';
 
@@ -18,28 +18,96 @@ interface BusinessRulesViewProps {
   orders: Order[];
 }
 
+export function sanitizeRules(r: Partial<BusinessRulesConfig> | null | undefined): BusinessRulesConfig {
+  if (!r || typeof r !== 'object') return { ...DEFAULT_BUSINESS_RULES };
+
+  let low = typeof r.lowRiskMax === 'number' && !isNaN(r.lowRiskMax) ? Math.round(r.lowRiskMax) : DEFAULT_BUSINESS_RULES.lowRiskMax;
+  let med = typeof r.mediumRiskMax === 'number' && !isNaN(r.mediumRiskMax) ? Math.round(r.mediumRiskMax) : DEFAULT_BUSINESS_RULES.mediumRiskMax;
+  let ele = typeof r.elevatedRiskMax === 'number' && !isNaN(r.elevatedRiskMax) ? Math.round(r.elevatedRiskMax) : DEFAULT_BUSINESS_RULES.elevatedRiskMax;
+
+  // Enforce sensible boundary bounds
+  low = Math.max(10, Math.min(40, low));
+  if (med <= low + 1) med = low + 2;
+  med = Math.max(low + 2, Math.min(75, med));
+  if (ele <= med + 1) ele = med + 2;
+  ele = Math.max(med + 2, Math.min(90, ele));
+  const crit = ele + 1;
+
+  const discount = typeof r.prepaidDiscountAmount === 'number' && !isNaN(r.prepaidDiscountAmount)
+    ? Math.max(10, Math.min(150, Math.round(r.prepaidDiscountAmount)))
+    : DEFAULT_BUSINESS_RULES.prepaidDiscountAmount;
+
+  const timeout = typeof r.confirmationTimeoutHours === 'number' && !isNaN(r.confirmationTimeoutHours)
+    ? Math.max(6, Math.min(72, Math.round(r.confirmationTimeoutHours)))
+    : DEFAULT_BUSINESS_RULES.confirmationTimeoutHours;
+
+  return {
+    ...DEFAULT_BUSINESS_RULES,
+    ...r,
+    lowRiskMax: low,
+    mediumRiskMax: med,
+    elevatedRiskMax: ele,
+    criticalRiskMin: crit,
+    prepaidDiscountAmount: discount,
+    prepaidDiscountPercentage: Number(((discount / 649) * 100).toFixed(1)),
+    confirmationTimeoutHours: timeout,
+    protectFirstTimeCAC: r.protectFirstTimeCAC !== undefined ? Boolean(r.protectFirstTimeCAC) : DEFAULT_BUSINESS_RULES.protectFirstTimeCAC,
+  };
+}
+
 export const BusinessRulesView: React.FC<BusinessRulesViewProps> = ({
   rules,
   onSaveRules,
   orders,
 }) => {
-  const [draftRules, setDraftRules] = useState<BusinessRulesConfig>({ ...rules });
+  const [draftRules, setDraftRules] = useState<BusinessRulesConfig>(() => sanitizeRules(rules));
   const [savedToast, setSavedToast] = useState(false);
+
+  useEffect(() => {
+    setDraftRules(sanitizeRules(rules));
+  }, [rules]);
 
   const handleUpdate = (key: keyof BusinessRulesConfig, val: any) => {
     setDraftRules(prev => {
-      const next = { ...prev, [key]: val };
-      if (key === 'lowRiskMax' && val >= next.mediumRiskMax) {
-        next.mediumRiskMax = Math.min(80, val + 5);
+      const next = { ...prev };
+
+      if (key === 'lowRiskMax') {
+        const num = Math.round(Number(val));
+        const clampedLow = Math.max(10, Math.min(40, num));
+        next.lowRiskMax = clampedLow;
+        if (next.mediumRiskMax <= clampedLow + 1) {
+          next.mediumRiskMax = clampedLow + 2;
+        }
+        if (next.elevatedRiskMax <= next.mediumRiskMax + 1) {
+          next.elevatedRiskMax = Math.min(90, next.mediumRiskMax + 2);
+          next.criticalRiskMin = next.elevatedRiskMax + 1;
+        }
+      } else if (key === 'mediumRiskMax') {
+        const num = Math.round(Number(val));
+        const clampedMed = Math.max(next.lowRiskMax + 2, Math.min(75, num));
+        next.mediumRiskMax = clampedMed;
+        if (next.elevatedRiskMax <= clampedMed + 1) {
+          next.elevatedRiskMax = Math.min(90, clampedMed + 2);
+        }
+        next.criticalRiskMin = next.elevatedRiskMax + 1;
+      } else if (key === 'elevatedRiskMax') {
+        const num = Math.round(Number(val));
+        const clampedEle = Math.max(next.mediumRiskMax + 2, Math.min(90, num));
+        next.elevatedRiskMax = clampedEle;
+        next.criticalRiskMin = clampedEle + 1;
+      } else if (key === 'prepaidDiscountAmount') {
+        const num = Math.round(Number(val));
+        const clampedDiscount = isNaN(num) ? 50 : Math.max(10, Math.min(150, num));
+        next.prepaidDiscountAmount = clampedDiscount;
+        next.prepaidDiscountPercentage = Number(((clampedDiscount / 649) * 100).toFixed(1));
+      } else if (key === 'confirmationTimeoutHours') {
+        const num = Math.round(Number(val));
+        const clampedTimeout = isNaN(num) ? 24 : Math.max(6, Math.min(72, num));
+        next.confirmationTimeoutHours = clampedTimeout;
+      } else {
+        (next as any)[key] = val;
       }
-      if (key === 'mediumRiskMax') {
-        if (val <= next.lowRiskMax) next.lowRiskMax = Math.max(5, val - 5);
-        if (val >= next.elevatedRiskMax) next.elevatedRiskMax = Math.min(90, val + 5);
-      }
-      if (key === 'elevatedRiskMax') {
-        if (val <= next.mediumRiskMax) next.mediumRiskMax = Math.max(15, val - 5);
-        next.criticalRiskMin = val + 1;
-      }
+
       return next;
     });
   };
@@ -50,7 +118,9 @@ export const BusinessRulesView: React.FC<BusinessRulesViewProps> = ({
   }, [orders, draftRules]);
 
   const handleSave = () => {
-    onSaveRules(draftRules);
+    const validated = sanitizeRules(draftRules);
+    onSaveRules(validated);
+    setDraftRules(validated);
     setSavedToast(true);
     setTimeout(() => setSavedToast(false), 2500);
   };
@@ -116,7 +186,7 @@ export const BusinessRulesView: React.FC<BusinessRulesViewProps> = ({
               <input
                 type="range"
                 min="10"
-                max="40"
+                max={Math.min(40, draftRules.mediumRiskMax - 2)}
                 step="1"
                 value={draftRules.lowRiskMax}
                 onChange={(e) => handleUpdate('lowRiskMax', Number(e.target.value))}
@@ -142,8 +212,8 @@ export const BusinessRulesView: React.FC<BusinessRulesViewProps> = ({
               </div>
               <input
                 type="range"
-                min="40"
-                max="65"
+                min={draftRules.lowRiskMax + 2}
+                max={Math.min(75, draftRules.elevatedRiskMax - 2)}
                 step="1"
                 value={draftRules.mediumRiskMax}
                 onChange={(e) => handleUpdate('mediumRiskMax', Number(e.target.value))}
@@ -169,15 +239,11 @@ export const BusinessRulesView: React.FC<BusinessRulesViewProps> = ({
               </div>
               <input
                 type="range"
-                min="65"
-                max="85"
+                min={draftRules.mediumRiskMax + 2}
+                max="90"
                 step="1"
                 value={draftRules.elevatedRiskMax}
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  handleUpdate('elevatedRiskMax', val);
-                  handleUpdate('criticalRiskMin', val + 1);
-                }}
+                onChange={(e) => handleUpdate('elevatedRiskMax', Number(e.target.value))}
                 className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
               />
               <div className="flex justify-between text-[10px] text-slate-400">
@@ -206,8 +272,9 @@ export const BusinessRulesView: React.FC<BusinessRulesViewProps> = ({
                 <label className="block text-slate-700 font-bold mb-1">Prepaid Discount (₹):</label>
                 <input
                   type="number"
-                  min="20"
-                  max="100"
+                  min="10"
+                  max="150"
+                  step="5"
                   value={draftRules.prepaidDiscountAmount}
                   onChange={(e) => handleUpdate('prepaidDiscountAmount', Number(e.target.value))}
                   className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 font-bold"
@@ -218,8 +285,9 @@ export const BusinessRulesView: React.FC<BusinessRulesViewProps> = ({
                 <label className="block text-slate-700 font-bold mb-1">Confirmation Timeout (Hours):</label>
                 <input
                   type="number"
-                  min="12"
-                  max="48"
+                  min="6"
+                  max="72"
+                  step="1"
                   value={draftRules.confirmationTimeoutHours}
                   onChange={(e) => handleUpdate('confirmationTimeoutHours', Number(e.target.value))}
                   className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 font-bold"

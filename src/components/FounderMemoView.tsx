@@ -18,14 +18,75 @@ interface FounderMemoViewProps {
   orders: Order[];
 }
 
+function buildMemoText(
+  orders: Order[],
+  findings: ReturnType<typeof extractAnalyticalFindings>,
+  summary: ReturnType<typeof computeBatchMetrics>['summary']
+): string {
+  const total = Math.max(1, orders.length);
+  const isBenchmark = orders.length === 2000;
+  const shipAsIsPct = ((summary.buckets.shipAsIs / total) * 100).toFixed(1);
+  const confirmPct = ((summary.buckets.confirm / total) * 100).toFixed(1);
+  const nudgePct = ((summary.buckets.nudge / total) * 100).toFixed(1);
+  const cancelPct = ((summary.buckets.cancel / total) * 100).toFixed(1);
+
+  return `TO: Founder & Executive Leadership
+DATE: October 30, 2026
+FROM: Associate Software / AI Engineer
+SUBJECT: COD Decision Engine: Unit-Economic Resolution & RTO Strategy
+DATASET: ${isBenchmark ? 'Benchmark Calibration Dataset (2,000 orders)' : `Active Dataset (${orders.length} orders)`}
+
+Executive Summary:
+We do not have to choose between Operations (cutting RTO bleed) and Marketing (protecting ₹300 CAC). By deploying our automated 4-bucket decision engine and offering a ₹50 prepaid discount nudge to elevated-risk orders, we cut the overall COD return rate from ${(summary.baselineRtoRate * 100).toFixed(1)}% to ~${(summary.newEffectiveRtoRate * 100).toFixed(1)}%, save ₹${summary.avoidedRtoSavings.toLocaleString()} in courier waste (${summary.avoidedRtoCount} intercepted returns), and generate a Net Rupee Impact of +₹${summary.netFinancialImpact.toLocaleString()} while preserving 97%+ of genuine first-time customers.
+
+1. What Surprised Me in the ${orders.length} Order Dataset (3 Key Analytical Findings):
+- Finding A: ${findings.finding1.label} (${findings.finding1.stat})
+  ${findings.finding1.detail}
+- Finding B: ${findings.finding2.label} (${findings.finding2.stat})
+  ${findings.finding2.detail}
+- Finding C: ${findings.finding3.label} (${findings.finding3.stat})
+  ${findings.finding3.detail}
+
+2. Recommended Decision Rules & Simulation on Loaded Orders:
+- Bucket 1 (Ship as-is): ${summary.buckets.shipAsIs} orders (${shipAsIsPct}%) — Score <= 28 (Repeat buyer, Tier-1/2 metro, structured address)
+- Bucket 2 (Ship after confirmation): ${summary.buckets.confirm} orders (${confirmPct}%) — Score 29–54 (Minor missing landmark, Hinglish)
+- Bucket 3 (Nudge to prepaid): ${summary.buckets.nudge} orders (${nudgePct}%) — Score 55–78 (Tier-3, cart >₹999, first-time buyer)
+- Bucket 4 (Hold / cancel): ${summary.buckets.cancel} orders (${cancelPct}%) — Score >= 79 (Fake name 'asdf', gibberish address, serial RTO)
+
+3. Balancing Operations vs. Marketing in Rupee (₹) Terms:
+- Operations dilemma: Auto-cancelling all elevated-risk orders saves ₹169.40 courier freight per order. However, cancelling a genuine buyer burns ₹300 Meta CAC + ₹402.38 margin = ₹702.38 in lost commercial revenue.
+- Marketing dilemma: Blind shipping incurs 28% overall COD return rate, burning ₹169.40 on every returned package and creating damaged inventory.
+- Mathematical Resolution (The ₹50 Prepaid Nudge):
+  We distinguish between the portfolio-wide baseline RTO (${(summary.baselineRtoRate * 100).toFixed(1)}%) and the targeted elevated-risk cohort (50% baseline RTO). Offering a ₹50 discount via WhatsApp UPI converts ~24% of this elevated-risk cohort to prepaid (collapsing return rate from 50% to 4%):
+  * Shipped as COD (50% RTO): (0.50 × ₹402.38) - (0.50 × ₹169.40) = ₹116.49 expected profit per order.
+  * Converted to Prepaid (4% RTO, ₹50 discount): (0.96 × ₹352.38) - (0.04 × ₹169.40) = ₹331.51 expected profit per order.
+  * Net Incremental Rupee Lift: ₹331.51 - ₹116.49 = +₹215.01 more net profit per converted order!
+  Uncommitted customers self-select out by ghosting the message and are safely held, stopping courier bleed without friction.
+
+4. What Could Go Wrong & How We Will Notice:
+- Failure Mode 1: False Positive Cancellations (Alienating genuine customers)
+  Guardrail: No first-time buyer with a valid phone number is ever auto-cancelled; they receive the WhatsApp nudge instead. Track customer support escalations daily.
+- Failure Mode 2: WhatsApp Fatigue / Meta Business Account Suspension
+  Guardrail: Track Meta Cloud API quality rating and customer block/opt-out rates in real time. If block rate exceeds 1.2%, dynamically narrow confirmation triggers.
+- Failure Mode 3: Courier Delivery Partner Fraud (Fake 'Customer Refused' Scans)
+  Guardrail: Cross-reference WhatsApp delivery confirmations against 3PL NDR logs. If a customer confirmed "YES" on WhatsApp but courier marks "Refused at door", flag courier partner for penalty.
+
+5. What I Would Build in the Next Two Weeks:
+- Direct Shopify & WMS Webhooks: Ingest orders in <500ms and write RTO_CLEARED or ON_HOLD tags into Shiprocket/Delhivery before label generation.
+- Automated Vernacular IVR Voice Bot: 15-second Hindi/regional automated voice call with press-1 confirmation for Tier-3 non-readers.
+- Dynamic Gamified Prepaid Incentives: Test dynamic mystery gifts (e.g. Free ₹249 Hair Mask if paid online in 10 minutes) to reach 35%+ prepaid conversion.`;
+}
+
 export const FounderMemoView: React.FC<FounderMemoViewProps> = ({ orders }) => {
   const [copied, setCopied] = useState(false);
   const findings = React.useMemo(() => extractAnalyticalFindings(orders), [orders]);
   const { summary } = React.useMemo(() => computeBatchMetrics(orders), [orders]);
   const total = Math.max(1, orders.length);
+  const isBenchmark = orders.length === 2000;
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(MEMO_TEXT);
+    const text = buildMemoText(orders, findings, summary);
+    navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -70,18 +131,25 @@ export const FounderMemoView: React.FC<FounderMemoViewProps> = ({ orders }) => {
       {/* The Memo Document Card */}
       <article className="bg-white border border-slate-200 rounded-2xl p-8 sm:p-12 shadow-sm text-slate-700 text-sm leading-relaxed space-y-8 font-sans print-only-block">
         {/* Memo Header Block */}
-        <div className="border-b border-slate-200 pb-6">
+        <div className="border-b border-slate-200 pb-6 space-y-3">
           <div className="grid grid-cols-2 gap-4 text-xs font-mono text-slate-500">
             <div><strong className="text-slate-900 font-sans">TO:</strong> Founder & Executive Leadership</div>
             <div><strong className="text-slate-900 font-sans">DATE:</strong> October 30, 2026</div>
             <div><strong className="text-slate-900 font-sans">FROM:</strong> Associate Software / AI Engineer</div>
             <div><strong className="text-slate-900 font-sans">SUBJECT:</strong> COD Decision Engine: Unit-Economic Resolution & RTO Strategy</div>
           </div>
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 text-[11px] text-slate-500">
+            <span className="font-semibold text-slate-700">Dataset Calibration:</span>
+            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium">
+              {isBenchmark ? `Benchmark Calibration Dataset (${orders.length} orders)` : `Active Dataset (${orders.length} orders)`}
+            </span>
+            <span className="text-slate-400">• ₹649 AOV • 62% Margin • ₹169.40 RTO Cost • ₹300 CAC</span>
+          </div>
         </div>
 
         {/* Executive Summary Callout */}
         <div className="bg-blue-50/70 border border-blue-200 p-4 rounded-xl text-blue-900 text-xs leading-relaxed">
-          <strong>Executive Summary:</strong> We do not have to choose between Operations (cutting RTO bleed) and Marketing (protecting ₹300 CAC). By deploying our automated 4-bucket decision engine and offering a <strong>₹50 prepaid discount nudge</strong>, we cut COD return rate from <strong>{(summary.baselineRtoRate * 100).toFixed(1)}% to ~{(summary.newEffectiveRtoRate * 100).toFixed(1)}%</strong>, save <strong>₹{summary.avoidedRtoSavings.toLocaleString()} in courier waste</strong>, and generate a <strong>Net Rupee Impact of +₹{summary.netFinancialImpact.toLocaleString()}</strong> while preserving 97% of genuine first-time customers.
+          <strong>Executive Summary:</strong> We do not have to choose between Operations (cutting RTO bleed) and Marketing (protecting ₹300 CAC). By deploying our automated 4-bucket decision engine and offering a <strong>₹50 prepaid discount nudge to elevated-risk orders</strong>, we cut the overall COD return rate from <strong>{(summary.baselineRtoRate * 100).toFixed(1)}% to ~{(summary.newEffectiveRtoRate * 100).toFixed(1)}%</strong>, save <strong>₹{summary.avoidedRtoSavings.toLocaleString()} in courier waste</strong> ({summary.avoidedRtoCount} intercepted returns), and generate a <strong>Net Rupee Impact of +₹{summary.netFinancialImpact.toLocaleString()}</strong> while preserving 97%+ of genuine first-time customers.
         </div>
 
         {/* Section 1: Data Findings */}
@@ -168,25 +236,35 @@ export const FounderMemoView: React.FC<FounderMemoViewProps> = ({ orders }) => {
           </h2>
           <div className="text-xs space-y-2 text-slate-600 leading-relaxed">
             <p>
-              The clash between Operations (<em>"stop risky COD to save shipping"</em>) and Marketing (<em>"don't waste our ₹300 CAC"</em>) is solved with exact arithmetic:
+              The clash between Operations (<em>"stop risky COD to save shipping"</em>) and Marketing (<em>"don't waste our ₹300 CAC"</em>) is resolved with exact arithmetic:
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 my-2">
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
                 <h4 className="font-bold text-slate-900 text-xs">If we fully obeyed Operations:</h4>
                 <p className="text-slate-500 mt-1">
-                  Cancelling all 480 elevated-risk orders would save ₹81,312 in courier costs. <strong>HOWEVER</strong>, we would discard ~260 genuine buyers who would have delivered, burning <strong>₹78,000 in wasted Meta CAC</strong> and <strong>₹1,04,600 in lost gross profit</strong>! Net business damage: <strong>-₹1,01,288 Loss</strong>.
+                  Cancelling all elevated-risk orders saves ₹169.40 courier freight per order. <strong>HOWEVER</strong>, cancelling genuine buyers who would have delivered burns <strong>₹300 in wasted Meta CAC</strong> plus <strong>₹402.38 in lost gross margin</strong> (a catastrophic ₹702.38 loss per false cancellation).
                 </p>
               </div>
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
                 <h4 className="font-bold text-slate-900 text-xs">If we fully obeyed Marketing:</h4>
                 <p className="text-slate-500 mt-1">
-                  Blindly shipping all orders incurs 560 monthly RTOs × ₹169.40 = <strong>₹94,864 in cash courier burn</strong>, plus damaged inventory that cannot be resold.
+                  Blindly shipping all orders incurs a ~28% overall COD return rate, bleeding <strong>₹169.40 in direct cash burn</strong> on every returned package, plus damaged unresellable inventory.
                 </p>
               </div>
             </div>
-            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950">
-              <strong>The Mathematical Bridge: The ₹50 Prepaid Nudge Buffer</strong><br />
-              Offering ₹50 off via WhatsApp converts 24% of elevated-risk orders to prepaid, collapsing their return rate to 4%. We preserve the ₹300 CAC, pocket ₹352.38 net delivered profit, and avoid ₹169.40 courier loss. The uncommitted customers ghost the message and are safely held, preserving capital without friction.
+            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950 space-y-1.5">
+              <strong>The Mathematical Bridge: The ₹50 Prepaid Nudge (Cohort-Specific Economics)</strong>
+              <p className="text-[11px] leading-relaxed">
+                We distinguish between our portfolio-wide baseline RTO ({(summary.baselineRtoRate * 100).toFixed(1)}%) and our targeted <strong>elevated-risk cohort (50% baseline RTO)</strong>. Offering ₹50 off via WhatsApp UPI converts ~24% of this high-risk segment to prepaid (collapsing return rate from 50% down to 4%):
+              </p>
+              <div className="bg-white/80 p-2.5 rounded-lg border border-emerald-200 font-mono text-[11px] space-y-0.5 text-emerald-950">
+                <div>• Shipped as COD (50% RTO): (0.50 × ₹402.38) − (0.50 × ₹169.40) = <strong>₹116.49</strong> exp. profit</div>
+                <div>• Converted to Prepaid (4% RTO, ₹50 off): (0.96 × ₹352.38) − (0.04 × ₹169.40) = <strong>₹331.51</strong> exp. profit</div>
+                <div className="text-emerald-700 font-bold pt-1 border-t border-emerald-200">• Net Incremental Gain: ₹331.51 − ₹116.49 = +₹215.01 more net profit per converted order!</div>
+              </div>
+              <p className="text-[11px] text-emerald-900">
+                Uncommitted buyers self-select out by ignoring the message and are safely held, stopping courier losses without alienating genuine first-time buyers.
+              </p>
             </div>
           </div>
         </section>
@@ -228,33 +306,3 @@ export const FounderMemoView: React.FC<FounderMemoViewProps> = ({ orders }) => {
   );
 };
 
-const MEMO_TEXT = `TO: Founder & Executive Leadership
-DATE: October 30, 2026
-FROM: Associate Software / AI Engineer
-SUBJECT: COD Decision Engine: Unit-Economic Resolution & RTO Strategy
-
-Executive Summary: We do not have to choose between Operations (cutting RTO bleed) and Marketing (protecting ₹300 CAC). By deploying our automated 4-bucket decision engine and offering a ₹50 prepaid discount nudge, we cut COD return rate from 28.0% to ~11.4%, save ₹68,400+ in courier waste, and generate a Net Rupee Impact of +₹1,42,800/month while preserving 97% of genuine first-time customers.
-
-1. What Surprised Me in the 2,000 Order Dataset (3 Key Findings):
-- Finding A: Incomplete addresses had a 64.2% RTO rate. Bot names ('asdf') had an 89.5% return rate. Hinglish addresses ('mandir ke peeche') had a 78.4% delivery rate and must not be cancelled.
-- Finding B: The top 15 highest-risk pincodes drove 38.6% of all return losses (Tier-3 RTO rates 49%-58% vs Metro 11%-14%).
-- Finding C: Repeat COD buyers had only a 6.1% RTO rate. First-time buyers with carts >₹999 had a 41.7% RTO rate.
-
-2. Recommended Decision Rules & Last Month's Simulation:
-- Bucket 1: Ship as-is (51.2% orders, 10.4% RTO)
-- Bucket 2: Ship after confirmation (24.8% orders, 12.1% RTO)
-- Bucket 3: Nudge to prepaid with ₹50 discount (18.6% orders, 6.8% RTO)
-- Bucket 4: Hold / cancel (5.4% orders, obvious bots/fakes)
-
-3. Balancing Operations vs. Marketing in Rupee (₹) Terms:
-Cancelling all risky orders burns ₹300 CAC + ₹402 margin = ₹702 loss per genuine buyer. Nudging with ₹50 discount drops RTO from 28% to 4%, yielding +₹215 more net profit per converted order. Net monthly bottom line impact: +₹1,42,800.
-
-4. What Could Go Wrong & Monitoring Strategy:
-- False positive cancellations (guarded by rule preventing auto-cancel on first-time buyers).
-- WhatsApp fatigue (monitored via opt-out rates).
-- Courier delivery fraud (monitored by reconciling WhatsApp confirmations against courier attempts).
-
-5. What I'd Build in Next 2 Weeks:
-- Direct Shopify & WMS Webhooks.
-- Vernacular IVR voice confirmation bot for Tier-3 non-readers.
-- Dynamic reward incentives for prepaid conversions.`;

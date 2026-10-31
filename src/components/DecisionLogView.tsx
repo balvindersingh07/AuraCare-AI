@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DecisionLogItem } from '../types';
 import { BookOpen, Plus, Check, Edit3, Trash2, Calendar, User, ArrowRight, ShieldCheck, X } from 'lucide-react';
+
+const STORAGE_KEY = 'auracare_decision_logs';
 
 const INITIAL_DECISION_LOGS: DecisionLogItem[] = [
   {
@@ -50,10 +52,48 @@ const INITIAL_DECISION_LOGS: DecisionLogItem[] = [
   },
 ];
 
+function loadPersistedDecisionLogs(): DecisionLogItem[] {
+  if (typeof window === 'undefined') return INITIAL_DECISION_LOGS;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return INITIAL_DECISION_LOGS;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const isValid = parsed.every(
+        item => item && typeof item === 'object' && typeof item.id === 'string' && typeof item.title === 'string'
+      );
+      if (isValid) {
+        // Prevent duplicate IDs if any exist in storage
+        const seenIds = new Set<string>();
+        const deduped: DecisionLogItem[] = [];
+        for (const item of parsed) {
+          if (!seenIds.has(item.id)) {
+            seenIds.add(item.id);
+            deduped.push(item);
+          }
+        }
+        return deduped;
+      }
+    }
+  } catch (error) {
+    console.warn('[DecisionLogView] Failed to parse decision logs from localStorage, using fallback:', error);
+  }
+  return INITIAL_DECISION_LOGS;
+}
+
 export const DecisionLogView: React.FC = () => {
-  const [logs, setLogs] = useState<DecisionLogItem[]>(INITIAL_DECISION_LOGS);
+  const [logs, setLogs] = useState<DecisionLogItem[]>(loadPersistedDecisionLogs);
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Sync to localStorage on every change
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(logs));
+    } catch (error) {
+      console.warn('[DecisionLogView] Failed to persist decision logs to localStorage:', error);
+    }
+  }, [logs]);
 
   const [formState, setFormState] = useState<Omit<DecisionLogItem, 'id' | 'created_at'>>({
     title: '',
@@ -71,8 +111,12 @@ export const DecisionLogView: React.FC = () => {
       setLogs(logs.map(l => l.id === editingId ? { ...l, ...formState } : l));
       setEditingId(null);
     } else {
+      const nextNum = logs.reduce((max, l) => {
+        const match = l.id.match(/\d+/);
+        return match ? Math.max(max, parseInt(match[0], 10)) : max;
+      }, logs.length) + 1;
       const newEntry: DecisionLogItem = {
-        id: `DEC-0${logs.length + 1}`,
+        id: `DEC-${String(nextNum).padStart(2, '0')}`,
         created_at: new Date().toISOString().split('T')[0],
         ...formState,
       };
